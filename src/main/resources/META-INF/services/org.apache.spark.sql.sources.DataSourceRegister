@@ -1,0 +1,2 @@
+org.apache.spark.streaming.datastore.DataStoreBatchReader
+org.apache.spark.streaming.datastore.DataStoreStreamReader
