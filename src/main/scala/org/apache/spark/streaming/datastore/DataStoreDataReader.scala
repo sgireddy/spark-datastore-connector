@@ -15,12 +15,11 @@ import scala.collection.JavaConverters._
   * Spark Structured Streaming Reader (spark.read) for google cloud datastore
   * @param dataSourceOptions DataSourceOptions, options provided through spark.read
   */
-class DataStoreDataReader (dataSourceOptions: DataSourceOptions, pushedFilters: Array[Filter])
-  extends DataReader[Row] {
+class DataStoreDataReader (options: Map[String, String], pushedFilters: Array[Filter])
+  extends DataReader[Row]  with Serializable {
 
   case class Value( json: String )
 
-  private val options = dataSourceOptions.asMap().asScala
   val datastore = DatastoreHelper.getDatastoreFromEnv
   private val dataStoreKind = options.getOrElse("datastorekind", throw new Exception("Invalid dataStoreKind Kind"))
 

@@ -6,13 +6,14 @@ import org.apache.spark.sql.sources.{DataSourceRegister, Filter}
 import org.apache.spark.sql.sources.v2.reader.{DataReaderFactory, DataSourceReader, SupportsPushDownFilters}
 import org.apache.spark.sql.sources.v2.{DataSourceOptions, DataSourceV2, ReadSupport}
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
+import scala.collection.JavaConverters._
 
 /***
   * sgireddy 10/20/2018
   * Spark Structured Streaming Reader (spark.read) for google cloud datastore
   * @param dataSourceOptions DataSourceOptions, options provided through spark.read
   */
-class DataStoreBatchReader extends DataSourceV2  with ReadSupport with DataSourceRegister with Logging  {
+class DataStoreBatchReader extends DataSourceV2  with ReadSupport with DataSourceRegister with Logging with Serializable  {
 
   def createReader(options: DataSourceOptions) = {
     new DataStoreSourceReader(options)
@@ -22,7 +23,8 @@ class DataStoreBatchReader extends DataSourceV2  with ReadSupport with DataSourc
 
 }
 
-class DataStoreSourceReader(dataSourceOptions: DataSourceOptions) extends DataSourceReader with SupportsPushDownFilters {
+class DataStoreSourceReader(dataSourceOptions: DataSourceOptions)
+  extends DataSourceReader with SupportsPushDownFilters  with Serializable {
 
   var pushedFilters: Array[Filter] = Array[Filter]()
   def readSchema() = {
@@ -40,13 +42,14 @@ class DataStoreSourceReader(dataSourceOptions: DataSourceOptions) extends DataSo
   def createDataReaderFactories = {
 
     val factoryList = new java.util.ArrayList[DataReaderFactory[Row]]
-    factoryList.add(new DataStoreReaderFactory(dataSourceOptions, pushedFilters))
+    val options = dataSourceOptions.asMap().asScala.toMap
+    factoryList.add(new DataStoreReaderFactory(options, pushedFilters))
     factoryList
   }
 }
 
-class DataStoreReaderFactory(dataSourceOptions: DataSourceOptions, pushedFilters: Array[Filter])
-  extends DataReaderFactory[Row] {
+class DataStoreReaderFactory(options: Map[String, String], pushedFilters: Array[Filter])
+  extends DataReaderFactory[Row] with Serializable {
 
-  def createDataReader = new DataStoreDataReader(dataSourceOptions, pushedFilters: Array[Filter])
+  def createDataReader = new DataStoreDataReader(options, pushedFilters: Array[Filter])
 }
