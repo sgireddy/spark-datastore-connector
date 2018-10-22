@@ -48,6 +48,25 @@ object Utils extends Serializable {
     tpe
   }
 
+  def runQuery(kind: String, schema: StructType, offset: Int = -1, limit: Int = -1): Iterator[Row] = {
+    val query = Query.newBuilder
+    query.addKindBuilder.setName(kind)
+    if(offset >= 0) query.setOffset(offset)
+    if(limit > 0) query.setLimit(Int32Value.newBuilder.setValue(limit))
+    val request = RunQueryRequest.newBuilder
+    request.setQuery(query)
+    val response = datastore.runQuery(request.build)
+    response.getBatch.getEntityResultsList.asScala.toList
+      .map(et => {
+        Utils.entityToRow(et.getEntity, schema)
+        //          val entity = et.getEntity
+        //          val json = EntityJsonPrinter.print(entity)
+        //          //Exclude Key
+        //          //val props = mapper.toJson(mapper.readTree(jstr).get("properties"))
+        //          new GenericRowWithSchema(List(json).toArray[Any], schema)
+      }).toIterator
+  }
+
   def getStructDataType(dsType: String): Option[DataType] = dsType match {
     case "nullValue" => Some(NullType) //??? this is fragile.. ignore and inspect another record?
     case "stringValue" => Some(StringType)
@@ -93,7 +112,6 @@ object Utils extends Serializable {
     println(row)
     row
   }
-
 
   def getObjectMapper = {
     import com.fasterxml.jackson.databind.SerializationFeature

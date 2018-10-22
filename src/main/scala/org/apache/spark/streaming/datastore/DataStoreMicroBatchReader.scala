@@ -29,7 +29,7 @@ class DataStoreMicroBatchReader(dataSourceOptions: DataSourceOptions) extends Mi
   private val dataStoreKind = options.getOrElse("datastorekind", throw new Exception("Invalid dataStoreKind Kind"))
   // private val offsetColumnName = options.getOrElse("offsetcolumnname", throw new Exception("Invalid dataStoreKind Kind"))
 
-  private val dataList: ListBuffer[String] = new ListBuffer[String]() //TODO: to entity???
+  private val dataList: ListBuffer[Row] = new ListBuffer[Row]() //TODO: to entity???
 
   private var startOffset: DataStoreOffset = DataStoreOffset(initialOffset)
   private var endOffset: DataStoreOffset = DataStoreOffset(-1)
@@ -40,18 +40,15 @@ class DataStoreMicroBatchReader(dataSourceOptions: DataSourceOptions) extends Mi
   private val batchSize = options.getOrElse("batchSize", "50").toInt
   private val queueSize = options.getOrElse("queueSize", "512").toInt
   private val producerRate = options.getOrElse("producerRate", "256").toInt
-  private val datastore = DatastoreHelper.getDatastoreFromEnv
 
   private val NO_DATA_OFFSET = DataStoreOffset(-1)
   private var stopped: Boolean = false
-
-  private var worker:Thread = null
 
   private var incomingEventCounter = 0
 
   private var producer: Thread = _
   private var consumer: Thread = _
-  private val dataQueue: BlockingQueue[String] = new ArrayBlockingQueue(queueSize)
+  private val dataQueue: BlockingQueue[Row] = new ArrayBlockingQueue(queueSize)
 
   // kick off a thread to start receiving the events
   initialize()
@@ -63,13 +60,12 @@ class DataStoreMicroBatchReader(dataSourceOptions: DataSourceOptions) extends Mi
       override def run() {
         var counter: Long = 0
         while(!stopped) {
-          val response = receive()
+          //val iterator = Utils.
+          val response = Utils.runQuery(dataStoreKind, readSchema(), startOffset.offset + 1, batchSize )
 
-          response.getBatch.getEntityResultsList.asScala.toList
-            .foreach(et => {
-              val entity = et.getEntity
-              val json = EntityJsonPrinter.print(entity)
-              dataQueue.put(json)
+          response
+            .foreach(row => {
+              dataQueue.put(row)
               counter += 1
             })
           //Thread.sleep(producerRate)
@@ -83,7 +79,7 @@ class DataStoreMicroBatchReader(dataSourceOptions: DataSourceOptions) extends Mi
       override def run() {
         while (!stopped) {
           val id = dataQueue.poll(100, TimeUnit.MILLISECONDS)
-          if (id != null.asInstanceOf[String]) {
+          if (id != null.asInstanceOf[Row]) {
             dataList.append(id)
             currentOffset = currentOffset + 1
           }
@@ -93,23 +89,7 @@ class DataStoreMicroBatchReader(dataSourceOptions: DataSourceOptions) extends Mi
     consumer.start()
   }
 
-  private def receive(): RunQueryResponse = {
-
-    val query = Query.newBuilder
-    query.addKindBuilder.setName(dataStoreKind)
-    query.setOffset(startOffset.offset + 1)
-    query.setLimit(Int32Value.newBuilder.setValue(batchSize))
-    val request = RunQueryRequest.newBuilder
-
-    request.setQuery(query)
-    datastore.runQuery(request.build)
-  }
-
-  override def readSchema(): StructType = {
-    StructType(
-      //StructField("timestamp", TimestampType, false) ::
-      StructField("value", StringType, false) :: Nil)  //json representation of entity TODO: Infer Schema
-  }
+  override def readSchema(): StructType = Utils.inferSchema(dataStoreKind)
 
   override def createDataReaderFactories(): java.util.List[DataReaderFactory[Row]] = {
     synchronized {
@@ -117,8 +97,8 @@ class DataStoreMicroBatchReader(dataSourceOptions: DataSourceOptions) extends Mi
       val endOrdinal = endOffset.offset.toInt + 1
 
       val newBlocks = synchronized {
-        val sliceStart = startOrdinal - lastOffsetCommitted.offset.toInt - 1
-        val sliceEnd = endOrdinal - lastOffsetCommitted.offset.toInt - 1
+        val sliceStart = startOrdinal - lastOffsetCommitted.offset - 1
+        val sliceEnd = endOrdinal - lastOffsetCommitted.offset - 1
         assert(sliceStart <= sliceEnd, s"sliceStart: $sliceStart sliceEnd: $sliceEnd")
         dataList.slice(sliceStart, sliceEnd)
       }
@@ -171,12 +151,12 @@ class DataStoreMicroBatchReader(dataSourceOptions: DataSourceOptions) extends Mi
 
 }
 
-class DataStoreStreamBatchTask(dataList: ListBuffer[String])
+class DataStoreStreamBatchTask(dataList: ListBuffer[Row])
   extends DataReaderFactory[Row] {
   override def createDataReader(): DataReader[Row] = new DataStoreStreamBatchReader(dataList)
 }
 
-class DataStoreStreamBatchReader(dataList: ListBuffer[String]) extends DataReader[Row] {
+class DataStoreStreamBatchReader(dataList: ListBuffer[Row]) extends DataReader[Row] {
   private var currentIdx = -1
 
   override def next(): Boolean = {
