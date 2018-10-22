@@ -2,16 +2,11 @@ package org.apache.spark.streaming.datastore
 
 import java.util.Optional
 import java.util.concurrent.{ArrayBlockingQueue, BlockingQueue, TimeUnit}
-
-import com.google.datastore.v1._
-import com.google.datastore.v1.client.DatastoreHelper
-import com.google.protobuf.{Int32Value, Int32ValueOrBuilder}
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.sources.v2.DataSourceOptions
 import org.apache.spark.sql.sources.v2.reader.{DataReader, DataReaderFactory}
 import org.apache.spark.sql.sources.v2.reader.streaming.{MicroBatchReader, Offset}
 import org.apache.spark.sql.types._
-
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 
@@ -28,24 +23,18 @@ class DataStoreMicroBatchReader(dataSourceOptions: DataSourceOptions) extends Mi
   private val initialOffset = options.getOrElse("initialoffset", "0").toInt
   private val dataStoreKind = options.getOrElse("datastorekind", throw new Exception("Invalid dataStoreKind Kind"))
   // private val offsetColumnName = options.getOrElse("offsetcolumnname", throw new Exception("Invalid dataStoreKind Kind"))
-
   private val dataList: ListBuffer[Row] = new ListBuffer[Row]() //TODO: to entity???
-
   private var startOffset: DataStoreOffset = DataStoreOffset(initialOffset)
   private var endOffset: DataStoreOffset = DataStoreOffset(-1)
-
   private var currentOffset: DataStoreOffset = DataStoreOffset(-1)
   private var lastReturnedOffset: DataStoreOffset = DataStoreOffset(-2)
   private var lastOffsetCommitted : DataStoreOffset = DataStoreOffset(-1)
   private val batchSize = options.getOrElse("batchSize", "50").toInt
   private val queueSize = options.getOrElse("queueSize", "512").toInt
   private val producerRate = options.getOrElse("producerRate", "256").toInt
-
   private val NO_DATA_OFFSET = DataStoreOffset(-1)
   private var stopped: Boolean = false
-
   private var incomingEventCounter = 0
-
   private var producer: Thread = _
   private var consumer: Thread = _
   private val dataQueue: BlockingQueue[Row] = new ArrayBlockingQueue(queueSize)
@@ -60,10 +49,7 @@ class DataStoreMicroBatchReader(dataSourceOptions: DataSourceOptions) extends Mi
       override def run() {
         var counter: Long = 0
         while(!stopped) {
-          //val iterator = Utils.
-          val response = Utils.runQuery(dataStoreKind, readSchema(), startOffset.offset + 1, batchSize )
-
-          response
+          Utils.runQuery(dataStoreKind, readSchema(), startOffset.offset + 1, batchSize )
             .foreach(row => {
               dataQueue.put(row)
               counter += 1
