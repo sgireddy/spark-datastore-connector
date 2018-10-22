@@ -1,6 +1,7 @@
 package org.apache.spark.streaming.datastore
 
 import java.util.Optional
+import java.util.concurrent.{ArrayBlockingQueue, BlockingQueue, TimeUnit}
 
 import com.google.datastore.v1._
 import com.google.datastore.v1.client.DatastoreHelper
@@ -37,6 +38,8 @@ class DataStoreMicroBatchReader(dataSourceOptions: DataSourceOptions) extends Mi
   private var lastReturnedOffset: DataStoreOffset = DataStoreOffset(-2)
   private var lastOffsetCommitted : DataStoreOffset = DataStoreOffset(-1)
   private val batchSize = options.getOrElse("batchSize", "50").toInt
+  private val queueSize = options.getOrElse("queueSize", "512").toInt
+  private val producerRate = options.getOrElse("producerRate", "256").toInt
   private val datastore = DatastoreHelper.getDatastoreFromEnv
 
   private val NO_DATA_OFFSET = DataStoreOffset(-1)
@@ -46,22 +49,51 @@ class DataStoreMicroBatchReader(dataSourceOptions: DataSourceOptions) extends Mi
 
   private var incomingEventCounter = 0
 
+  private var producer: Thread = _
+  private var consumer: Thread = _
+  private val dataQueue: BlockingQueue[String] = new ArrayBlockingQueue(queueSize)
+
   // kick off a thread to start receiving the events
   initialize()
 
   private def initialize(): Unit = synchronized {
 
-
-    worker = new Thread("DataStore Worker") {
+    producer = new Thread("Data Producer") {
       setDaemon(true)
       override def run() {
-        receive()
+        var counter: Long = 0
+        while(!stopped) {
+          val response = receive()
+
+          response.getBatch.getEntityResultsList.asScala.toList
+            .foreach(et => {
+              val entity = et.getEntity
+              val json = EntityJsonPrinter.print(entity)
+              dataQueue.put(json)
+              counter += 1
+            })
+          //Thread.sleep(producerRate)
+        }
       }
     }
-    worker.start()
+    producer.start()
+
+    consumer = new Thread("Data Consumer") {
+      setDaemon(true)
+      override def run() {
+        while (!stopped) {
+          val id = dataQueue.poll(100, TimeUnit.MILLISECONDS)
+          if (id != null.asInstanceOf[String]) {
+            dataList.append(id)
+            currentOffset = currentOffset + 1
+          }
+        }
+      }
+    }
+    consumer.start()
   }
 
-  private def receive(): Unit = {
+  private def receive(): RunQueryResponse = {
 
     val query = Query.newBuilder
     query.addKindBuilder.setName(dataStoreKind)
@@ -70,15 +102,7 @@ class DataStoreMicroBatchReader(dataSourceOptions: DataSourceOptions) extends Mi
     val request = RunQueryRequest.newBuilder
 
     request.setQuery(query)
-    val response = datastore.runQuery(request.build)
-
-    dataList.clear() // Is it being cleared elsewhere? does it cause issues?
-
-    dataList ++= response.getBatch.getEntityResultsList.asScala.toList
-      .map(et => {
-        val entity = et.getEntity
-        EntityJsonPrinter.print(entity)
-      })
+    datastore.runQuery(request.build)
   }
 
   override def readSchema(): StructType = {
