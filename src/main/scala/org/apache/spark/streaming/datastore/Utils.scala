@@ -26,9 +26,6 @@ object Utils extends Serializable {
     val request = RunQueryRequest.newBuilder
     request.setQuery(query)
     val response = datastore.runQuery(request.build)
-    val dsFields = response.getAllFields
-    dsFields.asScala.foreach(println(_))
-
     val entity = response.getBatch.getEntityResultsList.asScala.toList(0).getEntity
     val json = EntityJsonPrinter.print(entity)
     val props = mapper.readTree(json).get("properties").fields().asScala
@@ -43,9 +40,7 @@ object Utils extends Serializable {
       Some(StructField(field._1, tpe.get))
       else None
     }).toArray
-    val tpe = StructType(fields)
-    println(tpe)
-    tpe
+    StructType(fields)
   }
 
   def runQuery(kind: String, schema: StructType, offset: Int = -1, limit: Int = -1): Iterator[Row] = {
@@ -108,9 +103,7 @@ object Utils extends Serializable {
         case _ => null
       }
     }
-    val row = new GenericRowWithSchema(values.toArray, schema)
-    println(row)
-    row
+    new GenericRowWithSchema(values.toArray, schema)
   }
 
   def getObjectMapper = {

@@ -17,8 +17,6 @@ import scala.collection.mutable.ListBuffer
   */
 class DataStoreMicroBatchReader(dataSourceOptions: DataSourceOptions) extends MicroBatchReader with Serializable {
 
-  case class Value( json: String)
-
   private val options = dataSourceOptions.asMap().asScala
   private val initialOffset = options.getOrElse("initialoffset", "0").toInt
   private val dataStoreKind = options.getOrElse("datastorekind", throw new Exception("Invalid dataStoreKind Kind"))
@@ -125,7 +123,7 @@ class DataStoreMicroBatchReader(dataSourceOptions: DataSourceOptions) extends Mi
       sys.error(s"SampleStreamMicroBatchReader.commit() received an offset ($end) that did not " +
         s"originate with an instance of this class")
     )
-    val offsetDiff = (newOffset.offset - lastOffsetCommitted.offset).toInt
+    val offsetDiff = newOffset.offset - lastOffsetCommitted.offset
     if (offsetDiff < 0) {
       sys.error(s"Offsets committed out of order: $lastOffsetCommitted followed by $end")
     }
@@ -150,7 +148,7 @@ class DataStoreStreamBatchReader(dataList: ListBuffer[Row]) extends DataReader[R
     currentIdx < dataList.size
   }
 
-  override def get(): Row = Row(dataList(currentIdx), s"currentIdx = $currentIdx")
+  override def get(): Row = dataList(currentIdx) //, s"currentIdx = $currentIdx")
 
   override def close(): Unit = ()
 }
