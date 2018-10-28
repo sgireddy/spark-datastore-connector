@@ -77,8 +77,8 @@ class DataStoreMicroBatchReader(dataSourceOptions: DataSourceOptions) extends Mi
 
   override def createDataReaderFactories(): java.util.List[DataReaderFactory[Row]] = {
     synchronized {
-      val startOrdinal = startOffset.offset.toInt + 1
-      val endOrdinal = endOffset.offset.toInt + 1
+      val startOrdinal = startOffset.offset + 1
+      val endOrdinal = endOffset.offset + 1
 
       val newBlocks = synchronized {
         val sliceStart = startOrdinal - lastOffsetCommitted.offset - 1
