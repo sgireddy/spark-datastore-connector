@@ -1,5 +1,8 @@
 package org.apache.spark.streaming.datastore
 
+import java.sql.Timestamp
+import java.time.{Instant, ZoneId}
+
 import com.fasterxml.jackson.databind.{DeserializationFeature, ObjectMapper}
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.fasterxml.jackson.module.scala.experimental.ScalaObjectMapper
@@ -37,7 +40,7 @@ object Utils extends Serializable {
     val fields = props.flatMap(field => {
       val tpe  = getStructDataType(field._2)
       if (tpe.isDefined)
-      Some(StructField(field._1, tpe.get))
+        Some(StructField(field._1, tpe.get))
       else None
     }).toArray
     StructType(fields)
@@ -63,42 +66,55 @@ object Utils extends Serializable {
   }
 
   def getStructDataType(dsType: String): Option[DataType] = dsType match {
-    case "nullValue" => Some(NullType) //??? this is fragile.. ignore and inspect another record?
-    case "stringValue" => Some(StringType)
-    case "timestampValue" => Some(StringType) // Some(TimestampType)
-    case "integerValue" => Some(IntegerType)
-    case "doubleValue" => Some(DoubleType)
-    case "booleanValue" => Some(BooleanType)
-    case "entityValue" => Some(StringType)
-    case "arrayValue" => Some(StringType)
-    case _ => None
+    case "longValue"      => Some(LongType)
+    case "integerValue"   => Some(LongType)
+    case "doubleValue"    => Some(DoubleType)
+    case "booleanValue"   => Some(BooleanType)
+    case "timestampValue" => Some(TimestampType)
+    case "stringValue"    => Some(StringType)
+    case "entityValue"    => Some(StringType)
+    case "arrayValue"     => Some(StringType)
+    case "nullValue"      => Some(NullType) //??? this is fragile.. ignore and inspect another record?
+    case _                => None
   }
 
   def entityToRow(entity: Entity, schema: StructType): Row = {
-
     val props = entity.getPropertiesMap.asScala.toMap
-
     val values: List[Any] = schema.toList.map { field =>
       field.dataType match {
-        case TimestampType =>
-          if (props.get(field.name).isDefined)
-            props(field.name).getTimestampValue
-          else null
-        case StringType =>
-          if (props.get(field.name).isDefined)
-            props(field.name).getStringValue
-          else null
         case IntegerType =>
-          if (props.get(field.name).isDefined)
-            props(field.name).getIntegerValue
+          if (props.get(field.name).isDefined) {
+            val l = props(field.name).getIntegerValue
+            if (l.isValidInt) l.intValue()
+            else {
+              throw new Exception(s"Value $l is out of range for integer type")
+            }
+          }
           else null
         case DoubleType =>
           if (props.get(field.name).isDefined)
             props(field.name).getDoubleValue
           else null
+        case LongType =>
+          if (props.get(field.name).isDefined) {
+            props(field.name).getIntegerValue
+          }
+          else null
         case BooleanType =>
+          if (props.get(field.name).isDefined) {
+            props(field.name).getBooleanValue
+          }
+          else null
+        case TimestampType =>
           if (props.get(field.name).isDefined)
-            props(field.name).getBlobValue
+          {
+            val protoTS =  props(field.name).getTimestampValue()
+            Timestamp.from(Instant.ofEpochSecond(protoTS.getSeconds, protoTS.getNanos))
+          }
+          else null
+        case StringType =>
+          if (props.get(field.name).isDefined)
+            props(field.name).getStringValue
           else null
         case _ => null
       }
